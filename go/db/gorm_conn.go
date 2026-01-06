@@ -57,12 +57,11 @@ func (ctx *GormDBCtx) ConnectToSQLite(path string) error {
 		return err
 	}
 	connw, err := writeDBHandle.DB()
-	connw.SetMaxOpenConns(1) // prevent "database is locked" error
-
 	if err != nil {
 		slog.Error(ctx.ServicePrefix, "dbmode", ctx.DBMode, "method", "edit", "conn_type", "w", "err", err)
 		return err
 	}
+	connw.SetMaxOpenConns(1) // prevent "database is locked" error
 
 	//read
 	readDBHandle, err := gorm.Open(sqlite.Open(path), &gorm.Config{
