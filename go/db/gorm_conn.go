@@ -34,18 +34,17 @@ type GormDBCtx struct {
 	DBMode        string
 
 	// *- sqlite only
-	AllowMemMode bool
-	WALMode      bool
+	AllowMemoryMode bool
+	WALMode         bool
 }
 
 func (ctx *GormDBCtx) ConnectToSQLite(path string) error {
 	ctx.DBMode = DBModeSQLite
 
-	allow, err := ctx.FastDBCheck(path)
-
 	// memory mode
-	if !allow && err == nil {
-		slog.Error(ctx.ServicePrefix, "dbmode", ctx.DBMode, "method", "precheck", "err", "mem mode not allowed")
+	if !ctx.AllowMemoryMode && (path == ":memory:" || strings.HasPrefix(path, "file::memory:")) {
+		slog.Error(ctx.ServicePrefix, "dbmode", ctx.DBMode, "method", "precheck", "err", "memory mode not allowed")
+		return errors.New("memory mode not allowed")
 	}
 
 	// write
@@ -241,7 +240,11 @@ func (ctx *GormDBCtx) FastDBCheck(name string) (bool, error) {
 		return count > 0, err
 	case DBModeSQLite:
 		if name == ":memory:" || strings.HasPrefix(name, "file::memory:") {
-			return ctx.AllowMemMode, nil
+			if ctx.AllowMemoryMode {
+				return true, nil
+			} else {
+				return false, errors.New("memory mode not allowed")
+			}
 		}
 
 		db, err := sql.Open("sqlite3", "file:"+url.PathEscape(name)+"?mode=ro")
