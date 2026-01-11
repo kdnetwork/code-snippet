@@ -164,6 +164,10 @@ func (ctx *GormDBCtx) ConnectToMySQL(username string, password string, host stri
 func (ctx *GormDBCtx) ConnectToPostgreSQL(username string, password string, host string, dbname string, tls_option string) error {
 	ctx.DBMode = DBModePostgreSQL
 
+	if dbname == "" {
+		dbname = "postgres"
+	}
+
 	dsn := &url.URL{
 		Scheme: "postgresql",
 		Host:   host,
