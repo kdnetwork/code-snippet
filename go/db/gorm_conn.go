@@ -26,6 +26,7 @@ const (
 )
 
 type GormDBCtx struct {
+	// for mysql/postgresql: R == W
 	R *gorm.DB
 	W *gorm.DB
 
@@ -83,6 +84,23 @@ func (ctx *GormDBCtx) Connect() error {
 		return ctx.ConnectToMySQL(ctx.username, ctx.password, ctx.host, ctx.dbName, ctx.tlsOption)
 	case DBModePostgreSQL:
 		return ctx.ConnectToPostgreSQL(ctx.username, ctx.password, ctx.host, ctx.dbName, ctx.tlsOption)
+	}
+
+	return errors.New("invalid db mode `" + ctx.DBMode + "`")
+}
+
+// sqlite -> :memory:
+// mysql -> ""/<no_db>
+// postgresql -> "postgres"
+func (ctx *GormDBCtx) ConnectToDefault() error {
+	switch ctx.DBMode {
+	case DBModeSQLite:
+		ctx.AllowMemoryMode = true
+		return ctx.ConnectToSQLite(":memory:")
+	case DBModeMySQL:
+		return ctx.ConnectToMySQL(ctx.username, ctx.password, ctx.host, "", ctx.tlsOption)
+	case DBModePostgreSQL:
+		return ctx.ConnectToPostgreSQL(ctx.username, ctx.password, ctx.host, "postgres", ctx.tlsOption)
 	}
 
 	return errors.New("invalid db mode `" + ctx.DBMode + "`")
@@ -280,6 +298,10 @@ func (ctx *GormDBCtx) GetVersion() string {
 	}
 
 	return versionStruct.Version
+}
+
+func (ctx *GormDBCtx) GetDB() string {
+	return ctx.dbName
 }
 
 func (ctx *GormDBCtx) FastDBCheck(name string) (bool, error) {
