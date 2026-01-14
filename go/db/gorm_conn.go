@@ -36,6 +36,56 @@ type GormDBCtx struct {
 	// *- sqlite only
 	AllowMemoryMode bool
 	WALMode         bool
+
+	// auth
+	dbPath    string
+	dbName    string
+	username  string
+	password  string
+	host      string
+	tlsOption string
+}
+
+// mysql, sqlite, postgresql
+func (ctx *GormDBCtx) SetDBMode(mode string) *GormDBCtx {
+	lowerMode := strings.ToLower(mode)
+	if slices.Contains([]string{DBModeMySQL, DBModePostgreSQL, DBModeSQLite}, lowerMode) {
+		ctx.DBMode = lowerMode
+	}
+
+	return ctx
+}
+
+// sqlite
+func (ctx *GormDBCtx) SetDBPath(path string) *GormDBCtx {
+	ctx.DBMode = DBModeSQLite
+	ctx.dbPath = path
+
+	return ctx
+}
+
+// mysql/postgresql
+func (ctx *GormDBCtx) SetDBAuth(username, password, host, dbName, tlsOption string) *GormDBCtx {
+	ctx.username = username
+	ctx.password = password
+	ctx.host = host
+	ctx.dbName = dbName
+	ctx.tlsOption = tlsOption
+
+	return ctx
+}
+
+func (ctx *GormDBCtx) Connect() error {
+	switch ctx.DBMode {
+	case DBModeSQLite:
+		return ctx.ConnectToSQLite(ctx.dbPath)
+	case DBModeMySQL:
+		return ctx.ConnectToMySQL(ctx.username, ctx.password, ctx.host, ctx.dbName, ctx.tlsOption)
+	case DBModePostgreSQL:
+		return ctx.ConnectToPostgreSQL(ctx.username, ctx.password, ctx.host, ctx.dbName, ctx.tlsOption)
+	}
+
+	return errors.New("invalid db mode `" + ctx.DBMode + "`")
 }
 
 func (ctx *GormDBCtx) ConnectToSQLite(path string) error {

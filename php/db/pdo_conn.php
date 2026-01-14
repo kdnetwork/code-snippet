@@ -52,13 +52,9 @@ class PDOConn
         }
         return $this->conn;
     }
-    public function ConnectToPostgreSQL(string $username = '', string $password = '', string $host = '127.0.0.1', int $port = 5432, string $dbname = '', string $tls_option = '', $long_conn = false)
+    public function ConnectToPostgreSQL(string $username = '', string $password = '', string $host = '127.0.0.1', int $port = 5432, string $dbname = 'postgres', string $tls_option = '', $long_conn = false)
     {
         $this->DBMode = "postgresql";
-
-        if (!$dbname) {
-            $dbname = 'postgres';
-        }
 
         $dsn = "postgresql:host=$host;port=$port;dbname=$dbname";
 
