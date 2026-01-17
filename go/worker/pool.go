@@ -1,31 +1,58 @@
 package worker
 
-func RunWorkerPool[T any, K comparable, V any](tasks []*T, maxWorkers int, fn func(task *T, store map[K]V) error) []error {
+import (
+	"context"
+	"sync"
+
+	"github.com/kdnetwork/code-snippet/go/utlis"
+)
+
+func RunWorkerPool[T any, K comparable, V any](ctx context.Context, tasks []T, maxWorkers int, fn func(ctx context.Context, task T, store map[K]V) error) []error {
 	tasksLen := len(tasks)
 
 	if tasksLen == 0 {
 		return []error{}
 	}
 
-	maxWorkers = min(max(maxWorkers, 1), tasksLen)
+	maxWorkers = utlis.Clamp(tasksLen, 1, maxWorkers)
 
-	tasksChan := make(chan *T, tasksLen)
+	tasksChan := make(chan T, tasksLen)
 	errorsChan := make(chan error, tasksLen)
 
+	var wg sync.WaitGroup
+
 	for range maxWorkers {
-		go func() {
+		wg.Go(func() {
 			store := make(map[K]V)
-			for task := range tasksChan {
-				errorsChan <- fn(task, store)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case task, ok := <-tasksChan:
+					if !ok {
+						return
+					}
+					errorsChan <- fn(ctx, task, store)
+				}
 			}
-		}()
+		})
 	}
 
-	for _, task := range tasks {
-		tasksChan <- task
-	}
-	close(tasksChan)
+	go func() {
+		defer close(tasksChan)
+		for _, task := range tasks {
+			select {
+			case <-ctx.Done():
+				return
+			case tasksChan <- task:
+			}
+		}
+	}()
 
+	go func() {
+		wg.Wait()
+		close(errorsChan)
+	}()
 	errs := make([]error, 0, tasksLen)
 	for range tasks {
 		errs = append(errs, <-errorsChan)

@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
@@ -9,7 +10,10 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/go-sql-driver/mysql"
 	gorm_mysql_driver "gorm.io/driver/mysql"
@@ -38,6 +42,9 @@ type GormDBCtx struct {
 	AllowMemoryMode bool
 	WALMode         bool
 
+	// *- mysql only
+	CertPool *x509.CertPool
+
 	// auth
 	dbPath    string
 	dbName    string
@@ -45,6 +52,10 @@ type GormDBCtx struct {
 	password  string
 	host      string
 	tlsOption string
+
+	// timeout
+	dialTimeout        *time.Duration
+	NumLeakedGoroutine atomic.Int64
 }
 
 // mysql, sqlite, postgresql
@@ -72,6 +83,23 @@ func (ctx *GormDBCtx) SetDBAuth(username, password, host, dbName, tlsOption stri
 	ctx.host = host
 	ctx.dbName = dbName
 	ctx.tlsOption = tlsOption
+
+	return ctx
+}
+
+// mysql
+func (ctx *GormDBCtx) SetCertPool(pool *x509.CertPool) *GormDBCtx {
+	if pool != nil {
+		ctx.CertPool = pool
+	}
+
+	return ctx
+}
+
+func (ctx *GormDBCtx) SetDialTimeout(timeout *time.Duration) *GormDBCtx {
+	if timeout != nil && timeout.Seconds() >= 0 {
+		ctx.dialTimeout = timeout
+	}
 
 	return ctx
 }
@@ -166,7 +194,7 @@ func (ctx *GormDBCtx) ConnectToSQLite(path string) error {
 	return nil
 }
 
-func (ctx *GormDBCtx) ConnectToMySQL(username string, password string, host string, dbname string, tls_option string) error {
+func (ctx *GormDBCtx) ConnectToMySQL(username string, password string, host string, dbname string, tlsOption string) error {
 	ctx.DBMode = DBModeMySQL
 
 	dsn := mysql.NewConfig()
@@ -181,18 +209,21 @@ func (ctx *GormDBCtx) ConnectToMySQL(username string, password string, host stri
 		"loc":       "Local",
 	}
 
-	if tls_option != "" {
-		lowerTLSOption := strings.ToLower(tls_option)
+	if tlsOption != "" {
+		lowerTLSOption := strings.ToLower(tlsOption)
 		if slices.Contains([]string{"true", "false", "skip-verify", "preferred"}, lowerTLSOption) {
 			dsn.Params["tls"] = lowerTLSOption
 		} else {
-			CACertPool := x509.NewCertPool()
-			pem, err := os.ReadFile(tls_option)
+			if ctx.CertPool == nil {
+				ctx.CertPool = x509.NewCertPool()
+			}
+
+			pem, err := os.ReadFile(tlsOption)
 			if err != nil {
 				slog.Error(ctx.ServicePrefix, "dbmode", ctx.DBMode, "method", "read_cert", "err", err)
 				return err
 			}
-			if ok := CACertPool.AppendCertsFromPEM(pem); !ok {
+			if ok := ctx.CertPool.AppendCertsFromPEM(pem); !ok {
 				slog.Error(ctx.ServicePrefix, "dbmode", ctx.DBMode, "method", "append_cert", "err", err)
 				return errors.New("failed to append pem")
 			}
@@ -202,19 +233,69 @@ func (ctx *GormDBCtx) ConnectToMySQL(username string, password string, host stri
 				return err
 			}
 
-			mysql.RegisterTLSConfig("custom", &tls.Config{
+			if err = mysql.RegisterTLSConfig("custom", &tls.Config{
 				ServerName: parsedURL.Hostname(),
-				RootCAs:    CACertPool,
-			})
+				RootCAs:    ctx.CertPool,
+			}); err != nil {
+				slog.Error(ctx.ServicePrefix, "dbmode", ctx.DBMode, "method", "register_tls_config_from_file", "err", err)
+				return err
+			}
 			dsn.Params["tls"] = "custom"
 		}
+	} else if ctx.CertPool != nil {
+		parsedURL, err := url.Parse("tcp://" + host)
+		if err = mysql.RegisterTLSConfig("custom", &tls.Config{
+			ServerName: parsedURL.Hostname(),
+			RootCAs:    ctx.CertPool,
+		}); err != nil {
+			slog.Error(ctx.ServicePrefix, "dbmode", ctx.DBMode, "method", "register_tls_config_from_cert_pool", "err", err)
+			return err
+		}
+		dsn.Params["tls"] = "custom"
 	}
 
-	sqlDB, _ := sql.Open("mysql", dsn.FormatDSN())
+	var dbHandle *gorm.DB
+	var err error
 
-	dbHandle, err := gorm.Open(gorm_mysql_driver.New(gorm_mysql_driver.Config{
-		Conn: sqlDB,
-	}), &gorm.Config{Logger: logger.Default.LogMode(ctx.LogLevel)})
+	if ctx.dialTimeout != nil {
+		dsn.Timeout = *ctx.dialTimeout
+
+		type result struct {
+			db  *gorm.DB
+			err error
+		}
+		resChan := make(chan result, 1)
+
+		go func() {
+			// unable to prevent leaking goroutines... when timeout
+			ctx.NumLeakedGoroutine.Add(1)
+			defer ctx.NumLeakedGoroutine.Add(-1)
+
+			db, err := gorm.Open(gorm_mysql_driver.New(gorm_mysql_driver.Config{
+				DSNConfig: dsn,
+			}), &gorm.Config{Logger: logger.Default.LogMode(ctx.LogLevel)})
+			resChan <- result{db, err}
+		}()
+
+		timeoutCtx, cancel := context.WithTimeout(context.Background(), *ctx.dialTimeout)
+		defer cancel()
+
+		select {
+		case <-timeoutCtx.Done():
+			err = errors.New("database connection timeout")
+			slog.Error(ctx.ServicePrefix, "dbmode", ctx.DBMode, "method", "connect", "err", err)
+			return err
+		case res := <-resChan:
+			if res.err != nil {
+				return res.err
+			}
+			dbHandle = res.db
+		}
+	} else {
+		dbHandle, err = gorm.Open(gorm_mysql_driver.New(gorm_mysql_driver.Config{
+			DSNConfig: dsn,
+		}), &gorm.Config{Logger: logger.Default.LogMode(ctx.LogLevel)})
+	}
 
 	if err != nil {
 		slog.Error(ctx.ServicePrefix, "dbmode", ctx.DBMode, "method", "open", "err", err)
@@ -229,7 +310,7 @@ func (ctx *GormDBCtx) ConnectToMySQL(username string, password string, host stri
 	return nil
 }
 
-func (ctx *GormDBCtx) ConnectToPostgreSQL(username string, password string, host string, dbname string, tls_option string) error {
+func (ctx *GormDBCtx) ConnectToPostgreSQL(username string, password string, host string, dbname string, tlsOption string) error {
 	ctx.DBMode = DBModePostgreSQL
 
 	if dbname == "" {
@@ -252,14 +333,18 @@ func (ctx *GormDBCtx) ConnectToPostgreSQL(username string, password string, host
 
 	q := dsn.Query()
 
-	if tls_option != "" {
-		lowerTLSOption := strings.ToLower(tls_option)
+	if tlsOption != "" {
+		lowerTLSOption := strings.ToLower(tlsOption)
 		if slices.Contains([]string{"disable", "allow", "prefer", "require", "verify-ca", "verify-full"}, lowerTLSOption) {
 			q.Set("sslmode", lowerTLSOption)
 		} else {
 			q.Set("sslmode", "verify-full")
-			q.Set("sslrootcert", tls_option)
+			q.Set("sslrootcert", tlsOption)
 		}
+	}
+
+	if ctx.dialTimeout != nil {
+		q.Set("connect_timeout", strconv.Itoa(int(ctx.dialTimeout.Seconds())))
 	}
 
 	dsn.RawQuery = q.Encode()
@@ -282,7 +367,7 @@ func (ctx *GormDBCtx) ConnectToPostgreSQL(username string, password string, host
 	return nil
 }
 
-func (ctx *GormDBCtx) GetVersion() string {
+func (ctx *GormDBCtx) Version() string {
 	versionStruct := new(struct {
 		Version string
 	})
@@ -299,8 +384,15 @@ func (ctx *GormDBCtx) GetVersion() string {
 
 	return versionStruct.Version
 }
+func (ctx *GormDBCtx) GetVersion() string {
+	return ctx.Version()
+
+}
 
 func (ctx *GormDBCtx) GetDB() string {
+	return ctx.DBName()
+}
+func (ctx *GormDBCtx) DBName() string {
 	return ctx.dbName
 }
 
