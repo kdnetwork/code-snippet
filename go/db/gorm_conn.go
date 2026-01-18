@@ -89,13 +89,12 @@ func (ctx *GormDBCtx) SetDBAuth(username, password, host, dbName, tlsOption stri
 
 // mysql
 func (ctx *GormDBCtx) SetCertPool(pool *x509.CertPool) *GormDBCtx {
-	if pool != nil {
-		ctx.CertPool = pool
-	}
+	ctx.CertPool = pool
 
 	return ctx
 }
 
+// mysql/postgresql
 func (ctx *GormDBCtx) SetDialTimeout(timeout *time.Duration) *GormDBCtx {
 	if timeout != nil && timeout.Seconds() >= 0 {
 		ctx.dialTimeout = timeout
@@ -132,6 +131,37 @@ func (ctx *GormDBCtx) ConnectToDefault() error {
 	}
 
 	return errors.New("invalid db mode `" + ctx.DBMode + "`")
+}
+
+func (ctx *GormDBCtx) Close() error {
+	closeDB := func(db *gorm.DB) error {
+		if db == nil {
+			return nil
+		}
+		sqlDB, err := db.DB()
+		if err != nil {
+			return err
+		}
+		if sqlDB != nil {
+			return sqlDB.Close()
+		}
+		return nil
+	}
+
+	if err := closeDB(ctx.R); err != nil {
+		return err
+	}
+
+	ctx.R = nil
+
+	if ctx.W != ctx.R {
+		if err := closeDB(ctx.W); err != nil {
+			return err
+		}
+	}
+
+	ctx.W = nil
+	return nil
 }
 
 func (ctx *GormDBCtx) ConnectToSQLite(path string) error {
@@ -268,6 +298,9 @@ func (ctx *GormDBCtx) ConnectToMySQL(username string, password string, host stri
 
 		go func() {
 			// unable to prevent leaking goroutines... when timeout
+			// FYI-> https://github.com/0xERR0R/blocky/issues/1585
+			// -> https://github.com/go-gorm/gorm/issues/6791
+			// -> https://github.com/go-gorm/gorm/issues/5599
 			ctx.NumLeakedGoroutine.Add(1)
 			defer ctx.NumLeakedGoroutine.Add(-1)
 
