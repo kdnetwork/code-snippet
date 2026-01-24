@@ -18,7 +18,6 @@ import (
 	"github.com/go-sql-driver/mysql"
 	gorm_mysql_driver "gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -174,7 +173,7 @@ func (ctx *GormDBCtx) ConnectToSQLite(path string) error {
 	}
 
 	// write
-	writeDBHandle, err := gorm.Open(sqlite.Open(path), &gorm.Config{
+	writeDBHandle, err := gorm.Open(SqliteDriverOpen(path), &gorm.Config{
 		Logger: logger.Default.LogMode(ctx.LogLevel),
 	})
 	if err != nil {
@@ -189,7 +188,7 @@ func (ctx *GormDBCtx) ConnectToSQLite(path string) error {
 	connw.SetMaxOpenConns(1) // prevent "database is locked" error
 
 	//read
-	readDBHandle, err := gorm.Open(sqlite.Open(path), &gorm.Config{
+	readDBHandle, err := gorm.Open(SqliteDriverOpen(path), &gorm.Config{
 		Logger: logger.Default.LogMode(ctx.LogLevel),
 	})
 	if err != nil {

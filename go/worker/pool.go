@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/kdnetwork/code-snippet/go/utlis"
+	"github.com/kdnetwork/code-snippet/go/utils"
 )
 
 func RunWorkerPool[T any, K comparable, V any](ctx context.Context, tasks []T, maxWorkers int, fn func(ctx context.Context, task T, store map[K]V) error) []error {
@@ -14,7 +14,7 @@ func RunWorkerPool[T any, K comparable, V any](ctx context.Context, tasks []T, m
 		return []error{}
 	}
 
-	maxWorkers = utlis.Clamp(tasksLen, 1, maxWorkers)
+	maxWorkers = utils.Clamp(tasksLen, 1, maxWorkers)
 
 	tasksChan := make(chan T, tasksLen)
 	errorsChan := make(chan error, tasksLen)
