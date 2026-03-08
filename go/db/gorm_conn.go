@@ -229,7 +229,11 @@ func (ctx *GormDBCtx) ConnectToMySQL(username string, password string, host stri
 	dsn := mysql.NewConfig()
 	dsn.User = username
 	dsn.Passwd = password
-	dsn.Net = "tcp"
+	if isUnixSocket(host) {
+		dsn.Net = "unix"
+	} else {
+		dsn.Net = "tcp"
+	}
 	dsn.Addr = host
 	dsn.DBName = dbname
 	dsn.Params = map[string]string{
@@ -238,49 +242,51 @@ func (ctx *GormDBCtx) ConnectToMySQL(username string, password string, host stri
 		"loc":       "Local",
 	}
 
-	if tlsOption != "" {
-		lowerTLSOption := strings.ToLower(tlsOption)
-		if slices.Contains([]string{"true", "false", "skip-verify", "preferred"}, lowerTLSOption) {
-			dsn.Params["tls"] = lowerTLSOption
-		} else {
-			if ctx.CertPool == nil {
-				ctx.CertPool = x509.NewCertPool()
-			}
+	if dsn.Net == "tcp" {
+		if tlsOption != "" {
+			lowerTLSOption := strings.ToLower(tlsOption)
+			if slices.Contains([]string{"true", "false", "skip-verify", "preferred"}, lowerTLSOption) {
+				dsn.Params["tls"] = lowerTLSOption
+			} else {
+				if ctx.CertPool == nil {
+					ctx.CertPool = x509.NewCertPool()
+				}
 
-			pem, err := os.ReadFile(tlsOption)
-			if err != nil {
-				slog.Error(ctx.ServicePrefix, "dbmode", ctx.DBMode, "method", "read_cert", "err", err)
-				return err
+				pem, err := os.ReadFile(tlsOption)
+				if err != nil {
+					slog.Error(ctx.ServicePrefix, "dbmode", ctx.DBMode, "method", "read_cert", "err", err)
+					return err
+				}
+				if ok := ctx.CertPool.AppendCertsFromPEM(pem); !ok {
+					slog.Error(ctx.ServicePrefix, "dbmode", ctx.DBMode, "method", "append_cert", "err", err)
+					return errors.New("failed to append pem")
+				}
+				parsedURL, err := url.Parse("tcp://" + host)
+				if err != nil {
+					slog.Error(ctx.ServicePrefix, "dbmode", ctx.DBMode, "method", "read_host", "err", err)
+					return err
+				}
+
+				if err = mysql.RegisterTLSConfig("custom", &tls.Config{
+					ServerName: parsedURL.Hostname(),
+					RootCAs:    ctx.CertPool,
+				}); err != nil {
+					slog.Error(ctx.ServicePrefix, "dbmode", ctx.DBMode, "method", "register_tls_config_from_file", "err", err)
+					return err
+				}
+				dsn.Params["tls"] = "custom"
 			}
-			if ok := ctx.CertPool.AppendCertsFromPEM(pem); !ok {
-				slog.Error(ctx.ServicePrefix, "dbmode", ctx.DBMode, "method", "append_cert", "err", err)
-				return errors.New("failed to append pem")
-			}
+		} else if ctx.CertPool != nil {
 			parsedURL, err := url.Parse("tcp://" + host)
-			if err != nil {
-				slog.Error(ctx.ServicePrefix, "dbmode", ctx.DBMode, "method", "read_host", "err", err)
-				return err
-			}
-
 			if err = mysql.RegisterTLSConfig("custom", &tls.Config{
 				ServerName: parsedURL.Hostname(),
 				RootCAs:    ctx.CertPool,
 			}); err != nil {
-				slog.Error(ctx.ServicePrefix, "dbmode", ctx.DBMode, "method", "register_tls_config_from_file", "err", err)
+				slog.Error(ctx.ServicePrefix, "dbmode", ctx.DBMode, "method", "register_tls_config_from_cert_pool", "err", err)
 				return err
 			}
 			dsn.Params["tls"] = "custom"
 		}
-	} else if ctx.CertPool != nil {
-		parsedURL, err := url.Parse("tcp://" + host)
-		if err = mysql.RegisterTLSConfig("custom", &tls.Config{
-			ServerName: parsedURL.Hostname(),
-			RootCAs:    ctx.CertPool,
-		}); err != nil {
-			slog.Error(ctx.ServicePrefix, "dbmode", ctx.DBMode, "method", "register_tls_config_from_cert_pool", "err", err)
-			return err
-		}
-		dsn.Params["tls"] = "custom"
 	}
 
 	var dbHandle *gorm.DB
@@ -461,4 +467,15 @@ func (ctx *GormDBCtx) FastDBCheck(name string) (bool, error) {
 	}
 
 	return false, errors.New("not supported db")
+}
+
+// TODO any good idea?
+func isUnixSocket(s string) bool {
+	return strings.HasPrefix(s, "/")
+
+	// st, err := os.Stat(s)
+	// if err != nil {
+	// 	return false
+	// }
+	// return st.Mode()&os.ModeSocket != 0
 }
