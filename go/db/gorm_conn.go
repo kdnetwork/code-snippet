@@ -167,7 +167,7 @@ func (ctx *GormDBCtx) ConnectToSQLite(path string) error {
 	ctx.DBMode = DBModeSQLite
 
 	// memory mode
-	if !ctx.AllowMemoryMode && (path == ":memory:" || strings.HasPrefix(path, "file::memory:")) {
+	if !ctx.AllowMemoryMode && (path == ":memory:" || strings.HasPrefix(path, "file::memory:") || strings.Contains(path, "mode=memory")) {
 		slog.Error(ctx.ServicePrefix, "dbmode", ctx.DBMode, "method", "precheck", "err", "memory mode not allowed")
 		return errors.New("memory mode not allowed")
 	}
@@ -445,7 +445,7 @@ func (ctx *GormDBCtx) FastDBCheck(name string) (bool, error) {
 		err := ctx.R.Raw("SELECT COUNT(*) AS count FROM information_schema.schemata WHERE schema_name = ?;", name).Scan(&count).Error
 		return count > 0, err
 	case DBModeSQLite:
-		if name == ":memory:" || strings.HasPrefix(name, "file::memory:") {
+		if name == ":memory:" || strings.HasPrefix(name, "file::memory:") || strings.Contains(name, "mode=memory") {
 			if ctx.AllowMemoryMode {
 				return true, nil
 			} else {
