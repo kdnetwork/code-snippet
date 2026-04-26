@@ -12,14 +12,8 @@ func GetEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
-var envFalseValues = map[string]struct{}{
-	"0": {}, "false": {}, "off": {}, "disabled": {}, "no": {}, "n": {},
-}
-
 func GetBoolEnv(key string) bool {
-	var envVal = GetEnv(key, "")
-	_, isFalse := envFalseValues[envVal]
-	return !(envVal == "" || isFalse)
+	return StrBoolF(GetEnv(key, ""))
 }
 
 func GetIntEnv(key string, defaultValue int) int {
