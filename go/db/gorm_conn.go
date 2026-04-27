@@ -34,6 +34,7 @@ type GormDBCtx struct {
 	W *gorm.DB
 
 	LogLevel      logger.LogLevel
+	logger        logger.Interface
 	ServicePrefix string
 	DBMode        string
 
@@ -100,6 +101,18 @@ func (ctx *GormDBCtx) SetDialTimeout(timeout *time.Duration) *GormDBCtx {
 	}
 
 	return ctx
+}
+
+func (ctx *GormDBCtx) SetLogger(logger logger.Interface) *GormDBCtx {
+	ctx.logger = logger
+	return ctx
+}
+
+func (ctx *GormDBCtx) Logger() logger.Interface {
+	if ctx.logger != nil {
+		return ctx.logger
+	}
+	return logger.Default.LogMode(ctx.LogLevel)
 }
 
 func (ctx *GormDBCtx) Connect() error {
@@ -174,7 +187,7 @@ func (ctx *GormDBCtx) ConnectToSQLite(path string) error {
 
 	// write
 	writeDBHandle, err := gorm.Open(SqliteDriverOpen(path), &gorm.Config{
-		Logger: logger.Default.LogMode(ctx.LogLevel),
+		Logger: ctx.Logger(),
 	})
 	if err != nil {
 		slog.Error(ctx.ServicePrefix, "dbmode", ctx.DBMode, "method", "open", "conn_type", "w", "err", err)
@@ -189,7 +202,7 @@ func (ctx *GormDBCtx) ConnectToSQLite(path string) error {
 
 	//read
 	readDBHandle, err := gorm.Open(SqliteDriverOpen(path), &gorm.Config{
-		Logger: logger.Default.LogMode(ctx.LogLevel),
+		Logger: ctx.Logger(),
 	})
 	if err != nil {
 		slog.Error(ctx.ServicePrefix, "dbmode", ctx.DBMode, "method", "open", "conn_type", "r", "err", err)
@@ -311,7 +324,7 @@ func (ctx *GormDBCtx) ConnectToMySQL(username string, password string, host stri
 
 			db, err := gorm.Open(gorm_mysql_driver.New(gorm_mysql_driver.Config{
 				DSNConfig: dsn,
-			}), &gorm.Config{Logger: logger.Default.LogMode(ctx.LogLevel)})
+			}), &gorm.Config{Logger: ctx.Logger()})
 			resChan <- result{db, err}
 		}()
 
@@ -332,7 +345,7 @@ func (ctx *GormDBCtx) ConnectToMySQL(username string, password string, host stri
 	} else {
 		dbHandle, err = gorm.Open(gorm_mysql_driver.New(gorm_mysql_driver.Config{
 			DSNConfig: dsn,
-		}), &gorm.Config{Logger: logger.Default.LogMode(ctx.LogLevel)})
+		}), &gorm.Config{Logger: ctx.Logger()})
 	}
 
 	if err != nil {
@@ -390,7 +403,7 @@ func (ctx *GormDBCtx) ConnectToPostgreSQL(username string, password string, host
 	dbHandle, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  dsn.String(),
 		PreferSimpleProtocol: true, // disables implicit prepared statement usage
-	}), &gorm.Config{Logger: logger.Default.LogMode(ctx.LogLevel)})
+	}), &gorm.Config{Logger: ctx.Logger()})
 
 	if err != nil {
 		slog.Error(ctx.ServicePrefix, "dbmode", ctx.DBMode, "method", "open", "err", err)
