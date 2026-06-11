@@ -30,7 +30,7 @@ func InitLoggerPresets(logger *slog.Logger) *slog.Logger {
 			slog.String("arch", versionInfo.Arch),
 			// slog.String("commit", versionInfo.CommitHash),
 			// slog.String("commit_time", versionInfo.CommitTime),
-			slog.Bool("modified", versionInfo.Modified),
+			// slog.Bool("modified", versionInfo.Modified),
 			// slog.Bool("cgo", versionInfo.CGO),
 		),
 	)
