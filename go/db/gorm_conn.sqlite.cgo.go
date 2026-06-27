@@ -1,5 +1,3 @@
-//go:build cgo
-
 package db
 
 import "gorm.io/driver/sqlite"
