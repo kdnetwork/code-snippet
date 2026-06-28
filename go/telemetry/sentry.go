@@ -37,11 +37,11 @@ func InitSentryLogger(ctx context.Context, dsn, version string, client *http.Cli
 	}
 
 	err := sentry.Init(sentry.ClientOptions{
-		Dsn:        dsn,
-		Debug:      true,
-		EnableLogs: true,
-		Release:    version,
-		Dist:       versionInfo.OS + "/" + versionInfo.Arch,
+		Dsn:   dsn,
+		Debug: true,
+		// EnableLogs: true, default enable logs since v0.47.0 getsentry/sentry-go#1297
+		Release: version,
+		Dist:    versionInfo.OS + "/" + versionInfo.Arch,
 
 		HTTPClient: client,
 	})
