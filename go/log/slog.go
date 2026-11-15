@@ -10,6 +10,8 @@ import (
 
 var SlogLevel slog.LevelVar
 
+var SlogHandlers map[string]slog.Handler //<-?
+
 func InitDefaultLogger() {
 	SlogLevel.Set(slog.LevelInfo) // slog.LevelDebug, slog.LevelInfo, slog.LevelWarn, slog.LevelError
 	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
@@ -18,6 +20,10 @@ func InitDefaultLogger() {
 	})
 
 	slog.SetDefault(InitLoggerPresets(slog.New(handler)))
+
+	SlogHandlers[""] = handler
+
+	SlogSetDefault()
 }
 
 func InitLoggerPresets(logger *slog.Logger) *slog.Logger {
@@ -34,6 +40,16 @@ func InitLoggerPresets(logger *slog.Logger) *slog.Logger {
 			// slog.Bool("cgo", versionInfo.CGO),
 		),
 	)
+}
+
+func SlogSetDefault() {
+	var newHandles []slog.Handler
+
+	for _, h := range SlogHandlers {
+		newHandles = append(newHandles, h)
+	}
+
+	slog.SetDefault(InitLoggerPresets(slog.New(slog.NewMultiHandler(newHandles...))))
 }
 
 func Fatal(msg string, v ...any) {

@@ -14,11 +14,26 @@ import (
 
 // InitSentryLogger MUST BE CALLED IN GOROUTINE
 func InitSentryLogger(ctx context.Context, dsn, version string, client *http.Client) error {
+	logger, err := NewSentryHandler(ctx, dsn, version, client)
+	if err != nil {
+		return err
+	}
+
+	slogBackup := slog.Default()
+	defer slog.SetDefault(slogBackup)
+
+	slog.SetDefault(kdlog.InitLoggerPresets(slog.New(logger)))
+	<-ctx.Done()
+
+	return err
+}
+
+func NewSentryHandler(ctx context.Context, dsn, version string, client *http.Client) (slog.Handler, error) {
 	// env.SENTRY_DSN string option // official name
 	if dsn == "" {
 		dsn = utils.GetEnv("SENTRY_DSN", dsn)
 		if dsn == "" {
-			return errors.New("sentry dsn is empty")
+			return nil, errors.New("sentry dsn is empty")
 		}
 	}
 
@@ -47,7 +62,7 @@ func InitSentryLogger(ctx context.Context, dsn, version string, client *http.Cli
 	})
 	if err != nil {
 		slog.Error("sentry init error", "error", err.Error())
-		return err
+		return nil, err
 	}
 	slog.Info("sentry init success")
 
@@ -66,11 +81,5 @@ func InitSentryLogger(ctx context.Context, dsn, version string, client *http.Cli
 		AddSource: true,
 	}.NewSentryHandler(ctx)
 
-	slogBackup := slog.Default()
-	defer slog.SetDefault(slogBackup)
-
-	slog.SetDefault(kdlog.InitLoggerPresets(slog.New(handler)))
-	<-ctx.Done()
-
-	return err
+	return handler, nil
 }
