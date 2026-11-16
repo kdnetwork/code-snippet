@@ -10,7 +10,7 @@ import (
 
 var SlogLevel slog.LevelVar
 
-var SlogHandlers map[string]slog.Handler //<-?
+var SlogHandlers = make(map[string]slog.Handler) //<-?
 
 func InitDefaultLogger() {
 	SlogLevel.Set(slog.LevelInfo) // slog.LevelDebug, slog.LevelInfo, slog.LevelWarn, slog.LevelError
