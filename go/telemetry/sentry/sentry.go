@@ -1,4 +1,4 @@
-package telemetry
+package telemetrysentry
 
 import (
 	"context"
@@ -69,7 +69,6 @@ func NewSentryHandler(ctx context.Context, dsn, version string, client *http.Cli
 	// Flush buffered events before the program terminates.
 	// flush is no use here because ctx was canceled
 	// defer sentry.Flush(2 * time.Second)
-	// TODO Go 1.26+ includes slog.NewMultiHandler
 
 	sentryLogLevels := []slog.Level{slog.LevelInfo, slog.LevelWarn, slog.LevelError, sentryslog.LevelFatal}
 	if kdlog.SlogLevel.Level() == slog.LevelDebug {
