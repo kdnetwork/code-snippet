@@ -8,14 +8,14 @@ import (
 	"github.com/kdnetwork/code-snippet/go/utils"
 )
 
-var SlogLevel slog.LevelVar
+var SlogLevel = new(slog.LevelVar)
 
 var SlogHandlers = make(map[string]slog.Handler) //<-?
 
 func InitDefaultLogger() {
 	SlogLevel.Set(slog.LevelInfo) // slog.LevelDebug, slog.LevelInfo, slog.LevelWarn, slog.LevelError
 	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level:     &SlogLevel,
+		Level:     SlogLevel,
 		AddSource: true,
 	})
 

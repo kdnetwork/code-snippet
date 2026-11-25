@@ -74,7 +74,7 @@ func NewOTelHandler(ctx context.Context, logsEndpoint string, headers map[string
 		otelslog.WithVersion(version),
 	)
 
-	return otelSlogLevelHandler{Handler: handler, level: &log.SlogLevel}, nil
+	return otelSlogLevelHandler{Handler: handler, level: log.SlogLevel}, nil
 }
 
 type otelSlogLevelHandler struct {
